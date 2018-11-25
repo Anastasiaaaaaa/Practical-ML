@@ -1,0 +1,137 @@
+---
+title: "Prediction Assignment"
+author: "Arkhipenko Anastasia"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+---
+###**The Task ** 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+###**1.Loading Packages ** 
+
+```{r setup, include=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+library(randomForest)
+```
+
+###**2.Loading Data **  
+
+Let N be the total length of your first and last names. Also, choose a random number a ∈ [0.4, 0.6] and round it to one decimal place.
+
+```{r highlight=TRUE, warning = FALSE}
+set.seed(42) #for reproducibility
+
+Train_URL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+Test_URL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+Train <- read.csv(url(Train_URL), na.strings=c("NA","#DIV/0!",""))
+Test <- read.csv(url(Test_URL), na.strings=c("NA","#DIV/0!",""))
+
+#Data partioning
+inTrain <- createDataPartition(y=Train$classe, p=0.75, list=FALSE)
+Train_1 <- Train[inTrain, ]
+Test_1 <- Train[-inTrain, ]
+dim(Train_1)
+dim(Test_1)
+dim(Test)
+```
+
+**3.Data Cleaning **  
+
+```{r highlight=TRUE, warning = FALSE}
+#Removing near zero variance variables
+nzv <- nearZeroVar(Train_1, saveMetrics=TRUE)
+Train_1 <- Train_1[,nzv$nzv==FALSE]
+
+nzv<- nearZeroVar(Test_1,saveMetrics=TRUE)
+Test_1 <- Test_1[,nzv$nzv==FALSE]
+
+Train_1 <- Train_1[c(-1)]
+
+#Removing variables with 70% and more NAs
+training <- Train_1
+for(i in 1:length(Train_1)) {
+    if( sum( is.na(Train_1[, i] ) ) /nrow(Train_1) >= .7) {
+        for(j in 1:length(training)) {
+            if(length(grep(names(Train_1[i]), names(training)[j]) ) == 1)  {
+                training <- training[ , -j]
+            }   
+        } 
+    }
+}
+
+# Setting back to the original name and removing etra variable
+Train_1 <- training
+rm(training)
+
+#Transforming the Test_1 and Test data sets to make them have the same features
+a <- colnames(Train_1)
+b <- colnames(Train_1[, -58]) #removing "classe" column
+Test_1 <- Test_1[a] #allow only variables in Test_1 that are also in Train_1
+Test <- Test[b] #allow only variables in Test that are also in Train_1
+
+dim(Train_1)
+dim(Test_1)
+dim(Test)
+
+for (i in 1:length(Test)) {
+    for(j in 1:length(Train_1)) {
+        if(length(grep(names(Train_1[i]), names(Test)[j]) ) == 1)  {
+            class(Test[j]) <- class(Train_1[i])
+        }      
+    }      
+}
+
+#Getting the same classes between Test and Train_1
+Test <- rbind(Train_1[2, -58], Test)
+Test <- Test[-1,]
+```
+  
+**4.Building Prediction Models **  
+
+Decision Trees.
+It's fast and simple so lets use it first.
+
+```{r highlight=TRUE, warning = FALSE}
+set.seed(42)
+
+model_1 <- rpart(classe ~ ., data = Train_1, method = "class")
+fancyRpartPlot(model_1)
+```
+
+```{r highlight=TRUE, warning = FALSE}
+predictions_1 <- predict(model_1, Test_1[, 1:58], type = "class")
+confusion_matrix_1 <- confusionMatrix(predictions_1, Test_1$classe)
+confusion_matrix_1
+```
+
+Random Forests 
+
+```{r highlight=TRUE, warning = FALSE}
+model_2 <- randomForest(classe ~ ., data = Train_1)
+predictions_2 <- predict(model_2, Test_1[, 1:58], type = "class")
+confusion_matrix_2 <- confusionMatrix(predictions_2, Test_1$classe)
+confusion_matrix_2
+```
+
+**5.Predictions on the Test Data **  
+
+Finally, we have to predict the 20 test cases for the quiz.
+Random Forest shows the highest accuracy between these two models I used for training. So lets use it for final testing:
+
+```{r highlight=TRUE, warning = FALSE}
+final_predictions <- predict(model_2, Test, type = "class")
+final_predictions
+
+```
+
+Conclusion.
+The Decision tree and Random Forest models which were built in this project are very likely to overfit the data. To improve performance (in particular their generalization ability we could, for example, remove the "user name"" and "time reference" features. And the dataset can be improved by collecting information about height, weight and other physical characteristics of the user.
